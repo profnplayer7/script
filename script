@@ -13209,3 +13209,184 @@ task.spawn(function()
 	minimizeHolder()
 	if IsOnMobile then notify("Unstable Device", "On mobile, Infinite Yield may have issues or features that are not functioning correctly.") end
 end)
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+
+local ESP_ENABLED = true
+local MAX_DISTANCE = 100
+
+-- Table to keep track of ESP adornments
+local espObjects = {}
+
+-- Create ESP for one player
+local function createESP(player)
+    if player == LocalPlayer then return end
+    
+    local function onCharacterAdded(character)
+        local hrp = character:WaitForChild("HumanoidRootPart", 5)
+        if not hrp then return end
+        
+        if espObjects[player] then return end -- Already created
+        
+        -- Box
+        local box = Instance.new("BoxHandleAdornment")
+        box.Name = "ESPBox"
+        box.Adornee = hrp
+        box.Size = hrp.Size + Vector3.new(1.5, 1.5, 1.5)
+        box.Transparency = 0.25
+        box.AlwaysOnTop = true
+        box.ZIndex = 10
+        box.Color3 = Color3.fromRGB(255, 0, 0) -- Red
+        box.Parent = hrp
+        
+        -- Name tag
+        local billboard = Instance.new("BillboardGui")
+        billboard.Name = "ESPName"
+        billboard.Adornee = hrp
+        billboard.Size = UDim2.new(0, 200, 0, 40)
+        billboard.StudsOffset = Vector3.new(0, 3, 0)
+        billboard.AlwaysOnTop = true
+        billboard.Parent = hrp
+        
+        local nameLabel = Instance.new("TextLabel")
+        nameLabel.Size = UDim2.new(1, 0, 1, 0)
+        nameLabel.BackgroundTransparency = 1
+        nameLabel.Text = player.DisplayName
+        nameLabel.TextScaled = true
+        nameLabel.Font = Enum.Font.SourceSansBold
+        nameLabel.TextStrokeTransparency = 0.3
+        nameLabel.TextColor3 = Color3.fromRGB(0, 170, 255) -- Blue
+        nameLabel.Parent = billboard
+        
+        espObjects[player] = {
+            box = box,
+            nameLabel = nameLabel,
+            hrp = hrp,
+        }
+    end
+    
+    if player.Character then
+        onCharacterAdded(player.Character)
+    end
+    player.CharacterAdded:Connect(onCharacterAdded)
+    
+    -- Remove ESP when character dies or player leaves
+    player.CharacterRemoving:Connect(function()
+        if espObjects[player] then
+            if espObjects[player].box then espObjects[player].box:Destroy() end
+            if espObjects[player].nameLabel and espObjects[player].nameLabel.Parent then
+                espObjects[player].nameLabel.Parent:Destroy()
+            end
+            espObjects[player] = nil
+        end
+    end)
+    
+    player.AncestryChanged:Connect(function(_, parent)
+        if not parent then
+            if espObjects[player] then
+                if espObjects[player].box then espObjects[player].box:Destroy() end
+                if espObjects[player].nameLabel and espObjects[player].nameLabel.Parent then
+                    espObjects[player].nameLabel.Parent:Destroy()
+                end
+                espObjects[player] = nil
+            end
+        end
+    end)
+end
+
+-- Toggle ESP on/off
+local function toggleESP()
+    ESP_ENABLED = not ESP_ENABLED
+    for player, objects in pairs(espObjects) do
+        if objects.box then
+            objects.box.Visible = ESP_ENABLED
+        end
+        if objects.nameLabel then
+            objects.nameLabel.Visible = ESP_ENABLED
+        end
+    end
+end
+
+-- Update ESP visibility based on distance
+RunService.RenderStepped:Connect(function()
+    if not ESP_ENABLED then return end
+
+    local localChar = LocalPlayer.Character
+    local localHRP = localChar and localChar:FindFirstChild("HumanoidRootPart")
+    if not localHRP then return end
+
+    for player, objects in pairs(espObjects) do
+        local hrp = objects.hrp
+        if hrp and hrp.Parent then
+            local distance = (hrp.Position - localHRP.Position).Magnitude
+            local show = distance <= MAX_DISTANCE
+            objects.box.Visible = show
+            objects.nameLabel.Visible = show
+        else
+            if objects.box then
+                objects.box.Visible = false
+            end
+            if objects.nameLabel then
+                objects.nameLabel.Visible = false
+            end
+        end
+    end
+end)
+
+-- Connect players
+for _, player in ipairs(Players:GetPlayers()) do
+    createESP(player)
+end
+
+Players.PlayerAdded:Connect(createESP)
+
+-- Create GUI
+local mainGui = Instance.new("ScreenGui")
+mainGui.Name = "MyMenuGui"
+mainGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+
+local mainFrame = Instance.new("Frame", mainGui)
+mainFrame.Size = UDim2.new(0, 300, 0, 400)
+mainFrame.Position = UDim2.new(0.5, -150, 0.5, -200)  -- Center
+mainFrame.BackgroundColor3 = Color3.fromRGB(0, 100, 255)
+mainFrame.Visible = true
+
+local title = Instance.new("TextLabel", mainFrame)
+title.Size = UDim2.new(1, 0, 0, 50)
+title.Position = UDim2.new(0, 0, 0, 0)
+title.BackgroundTransparency = 1
+title.Text = "My Menu"
+title.TextColor3 = Color3.new(1,1,1)
+title.Font = Enum.Font.SourceSansBold
+title.TextScaled = true
+
+-- ESP Toggle Button inside GUI
+local espToggleButton = Instance.new("TextButton", mainFrame)
+espToggleButton.Size = UDim2.new(0, 150, 0, 50)
+espToggleButton.Position = UDim2.new(0.5, -75, 0, 70)
+espToggleButton.BackgroundColor3 = Color3.fromRGB(30, 144, 255)
+espToggleButton.TextColor3 = Color3.new(1, 1, 1)
+espToggleButton.Text = "Toggle ESP (E)"
+espToggleButton.Font = Enum.Font.SourceSansBold
+espToggleButton.TextScaled = true
+
+espToggleButton.MouseButton1Click:Connect(toggleESP)
+
+-- Toggle GUI visibility with backtick `
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if input.KeyCode == Enum.KeyCode.Backquote then
+        mainFrame.Visible = not mainFrame.Visible
+    end
+end)
+
+-- Also keep the original toggle ESP keybind ("E")
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if input.KeyCode == Enum.KeyCode.E then
+        toggleESP()
+    end
+end)
+
